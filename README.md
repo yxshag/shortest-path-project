@@ -19,18 +19,45 @@ The core engine is built to process real-world spatial networks (originally test
 - **Concepts:** Dijkstra's Algorithm, A* Algorithm, Double A* Algorithm, Graph Theory, Network Routing
 
 ---
-
 ## 🛠️ Setup & How to Run
 
-To run this project locally, follow these exact steps:
+Follow these steps to run the project locally.
 
-### 1. Download the Required Files
-Make sure you download **both** of the following files and place them inside the **same folder** on your computer:
-* `app.py` (The main Python backend application)
-* `index.html` (The frontend user interface)
+### 1. Clone the Repository
 
-### 2. Run the Application
-Open your terminal or command prompt, navigate to the folder containing these files, and run the Python script:
+```bash
+git clone <repository-url>
+cd <repository-folder>
+```
+
+Replace `<repository-url>` with your GitHub repository URL and `<repository-folder>` with the cloned folder name.
+
+### 2. Create a Virtual Environment
+
+**Windows**
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+**macOS / Linux**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Run the Application
 
 ```bash
 python app.py
+```
+
+Once the Flask server starts, open your browser and navigate to the local URL displayed in the terminal (typically `http://127.0.0.1:5000`).
