@@ -1,17 +1,30 @@
+
+
 import os
 import heapq
 import time
 import osmnx as ox
 from flask import Flask, render_template, request, jsonify
-#imports
 
-#create the webserver, name is app.__name__
+
 app = Flask(__name__, template_folder='.')
 
-GRAPH_FILENAME = "bengaluru_cached_map.graphml"
-origin_point = (12.8877, 77.5996) # Center of Arekere
+#defaults
+DEFAULT_GRAPH = "bengaluru_cached_map.graphml"
+#Arekere coords
+DEFAULT_LAT = 12.8877
+DEFAULT_LON = 77.5996
+print("In the next prompt, please enter the name of the file that is to be loaded.\n If you want to download and save a new location file, enter the name that the file has to be saved as.\n")
+print("Press [Enter] to accept the default values(bengaluru map centered at arekere).\n")
+user_graph = input(f"Enter graph filename [{DEFAULT_GRAPH}]: ").strip()
+GRAPH_FILENAME = user_graph if user_graph else DEFAULT_GRAPH
+user_lat = input(f"Enter origin latitude [{DEFAULT_LAT}]: ").strip()
+lat = float(user_lat) if user_lat else DEFAULT_LAT
+user_lon = input(f"Enter origin longitude [{DEFAULT_LON}]: ").strip()
+lon = float(user_lon) if user_lon else DEFAULT_LON
+origin_point = (lat, lon)
 
-# Check if we have already pre-downloaded and processed this map before
+#Download and load up the file if it doesnt exist.
 if os.path.exists(GRAPH_FILENAME):
     print("found file!loading it.")
     t0 = time.time()
@@ -27,15 +40,21 @@ else:
     print(f"Map saved locally in {round(time.time() - t0, 2)} seconds!")
 
 
-#djikstra function
+
 def run_dijkstra(G, start, end):
-    distances = {node: float('inf') for node in G.nodes}#set dist=inf for all
-    distances[start] = 0#set start dist=0
+    """
+    This function is the direct application of dijkstra's algorithm for shortest path.
+    It takes all the vertices and loads it up in a distance dict.
+    Then it performs a BFS traversal on all the unexplored neighbors and updates their distance.
+    Then it does the same thing with the vertex with the least distance and which is unexplored.
+    """
+    distances = {node: float('inf') for node in G.nodes}
+    distances[start] = 0
     came_from = {}
-    pq = [(0, start)]#priority queue
+    pq = [(0, start)]
     
     while pq:
-        current_distance, current_node = heapq.heappop(pq)#finds the node with the smallest dist
+        current_distance, current_node = heapq.heappop(pq)
         
         if current_node == end:
             break
@@ -43,18 +62,18 @@ def run_dijkstra(G, start, end):
             continue
             
         for neighbor in G.successors(current_node):#.successors gives all neighbouring nodes
-            edge_data = G.get_edge_data(current_node, neighbor)#get edge data like speed limit, length, etc
-            if not edge_data: continue#go to next if no edge data
-            edge_length = edge_data[0].get('length', float('inf'))#take the first road if there are multiple roads between 2 points, cuz it will have almost same distance. for absolute accuracy, loop thru all values and then find teh min value, also get length , if no length, then return inf
-            g_score = current_distance + edge_length #update score
-            
+            edge_data = G.get_edge_data(current_node, neighbor)
+            if not edge_data: continue
+            edge_length = edge_data[0].get('length', float('inf'))
+            g_score = current_distance + edge_length 
+            #Updates the distance
             if g_score < distances[neighbor]:
                 distances[neighbor] = g_score
                 came_from[neighbor] = current_node
                 heapq.heappush(pq, (g_score, neighbor))
-    #get teh final path     
     path = []
     current = end
+    #Back-tracking the entire path
     while current in came_from:
         path.append(current)
         current = came_from[current]
@@ -64,12 +83,18 @@ def run_dijkstra(G, start, end):
 
 
 def run_standard_a_star(G, start, end):
-    end_lat, end_lon = G.nodes[end]['y'], G.nodes[end]['x'] #get end coords
+    """
+    This function is the direct application of A* algorithm for shortest path.
+    It is exactly the same as dijkstra's algorithm except it is directional alorithm.
+    It has a heuristic which punishes the paths which are going in the wrong direction as the destination.
+    This makes it so that A* has to visit significantly lesser nodes than dijkstra.
+    """
+    
+    end_lat, end_lon = G.nodes[end]['y'], G.nodes[end]['x']
     
     def heuristic(node_id):
-        n_lat, n_lon = G.nodes[node_id]['y'], G.nodes[node_id]['x']#get current coords
-        return ox.distance.great_circle(n_lat, n_lon, end_lat, end_lon)#gives the dist between the 2 points, considering earth as a sphere
-    #rest all is same as djikstra
+        n_lat, n_lon = G.nodes[node_id]['y'], G.nodes[node_id]['x']
+        return ox.distance.great_circle(n_lat, n_lon, end_lat, end_lon)
     distances = {node: float('inf') for node in G.nodes}
     distances[start] = 0
     came_from = {}
@@ -92,7 +117,8 @@ def run_standard_a_star(G, start, end):
             if g_score < distances[neighbor]:
                 distances[neighbor] = g_score
                 came_from[neighbor] = current_node
-                f_score = g_score + heuristic(neighbor)#punishing the nodes that are in the wrong dirn
+                #punishing the nodes moving in the wrong direction
+                f_score = g_score + heuristic(neighbor)
                 heapq.heappush(pq, (f_score, g_score, neighbor))
                 
     path = []
@@ -105,11 +131,15 @@ def run_standard_a_star(G, start, end):
     return path
 
 def run_double_a_star(G, start, end):
-    #find start and end coords
+    """
+    This function is the direct application of double A* algorithm for shortest path.
+    It is exactly the same as A* algorithm except it runs the algorithm from the start as well as the end, so that it meets somewhere in the middle.
+    This makes it so that double A* has to visit significantly lesser nodes than dijkstra and A*.
+    """
     start_lat, start_lon = G.nodes[start]['y'], G.nodes[start]['x']
     end_lat, end_lon = G.nodes[end]['y'], G.nodes[end]['x']
     
-    #define the heuristic, but do it for frontways and backways seperately
+    #define the heuristic for forward and backward
     def heuristic_f(node_id):
         n_lat, n_lon = G.nodes[node_id]['y'], G.nodes[node_id]['x']
         return ox.distance.great_circle(n_lat, n_lon, end_lat, end_lon)
@@ -125,7 +155,7 @@ def run_double_a_star(G, start, end):
     
     intersect_node, min_total_path = None, float('inf')
 
-    while pq_f and pq_b:#keep going as long as both the queues have nodes left
+    while pq_f and pq_b:
         # Forward Step
         _, d_curr_f, curr_f = heapq.heappop(pq_f)
         if d_curr_f <= dist_f[curr_f]:
@@ -165,8 +195,6 @@ def run_double_a_star(G, start, end):
         if pq_f and pq_b:
             if pq_f[0][0] + pq_b[0][0] >= min_total_path + heuristic_f(start):
                 break
-            
-    #reconstructing the path
     if intersect_node is None: return []
     path_f, curr = [], intersect_node
     while curr in parent_f:
@@ -179,16 +207,13 @@ def run_double_a_star(G, start, end):
     if curr: path_b.append(curr)
     return path_f + path_b
 
-#basically telling flask that when some1 opens / in our webpage, just display index8.html
 @app.route('/')
 def home():
-    return open('index8.html').read()
+    return open('index.html').read()
 
-#if some1 opens /get_route in the webpage, then do the following
 @app.route('/get_route')
 def get_route():
     try:
-        #get start and end coords and choose which algo we want
         start_lat = float(request.args.get('start_lat'))
         start_lon = float(request.args.get('start_lon'))
         end_lat = float(request.args.get('end_lat'))
@@ -196,13 +221,13 @@ def get_route():
         selected_algo = request.args.get('algo', 'double_a_star')
         
         #get respective nodes
-        start_node = ox.nearest_nodes(graph, X=start_lon, Y=start_lat)
-        end_node = ox.nearest_nodes(graph, X=end_lon, Y=end_lat)
+        start_node = ox.distance.nearest_nodes(graph, X=start_lon, Y=start_lat)
+        end_node = ox.distance.nearest_nodes(graph, X=end_lon, Y=end_lat)
         
         # run all 3 algorithms and find the time taken and the paths found
         t0 = time.perf_counter()
         dijkstra_path = run_dijkstra(graph, start_node, end_node)
-        t_dijkstra = (time.perf_counter() - t0) * 1000 # convert to milliseconds
+        t_dijkstra = (time.perf_counter() - t0) * 1000 
 
         t0 = time.perf_counter()
         a_star_path = run_standard_a_star(graph, start_node, end_node)
@@ -220,7 +245,7 @@ def get_route():
         if not chosen_node_path:#send error message
             return jsonify({"status": "error", "message": "No valid route path found."}), 400
             
-        geometry_path = [[graph.nodes[node]['y'], graph.nodes[node]['x']] for node in chosen_node_path]#gets the coordinates of the path
+        geometry_path = [[graph.nodes[node]['y'], graph.nodes[node]['x']] for node in chosen_node_path]
         
         #return final values
         return jsonify({
@@ -236,7 +261,5 @@ def get_route():
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 400
 
-#run only if its running directly , if imported or something ,then dont run
-#debug makes sure we dont need to restart to save changes, flask restarts as soon as we save changes
 if __name__ == '__main__':
     app.run(debug=True, port=5000, use_reloader=False)
