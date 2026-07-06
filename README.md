@@ -26,11 +26,9 @@ Follow these steps to run the project locally.
 ### 1. Clone the Repository
 
 ```bash
-git clone <repository-url>
-cd <repository-folder>
+git clone https://github.com/yxshag/shortest-path-project/
+cd shortest-path-project
 ```
-
-Replace `<repository-url>` with your GitHub repository URL and `<repository-folder>` with the cloned folder name.
 
 ### 2. Create a Virtual Environment
 
