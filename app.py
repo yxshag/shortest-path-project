@@ -1,4 +1,25 @@
+#!/usr/bin/env python3
 
+"""
+=====================================================================================================================================================================
+Author:         yxshag
+Created:        15-06-2026
+GitHub:         https://github.com/yxshag
+
+Project:        shortest-path-project
+File:           app.py
+Description:    This app.py script runs a local Flask web server that calculates and benchmarks optimal driving routes on real-world map data.
+                Centered around Bengaluru, India, the application leverages OSMnx to download and model OpenStreetMap road networks as graph structures.
+                The core backend compares the execution speed and efficiency of three classic graph traversal algorithms:
+                    Dijkstra's Algorithm: A baseline breadth-first shortest path search.
+                    Standard A* Search: An optimized, directional search using a great-circle distance heuristic.
+                    Bidirectional A* Search (double_a_star): An advanced optimization that runs two simultaneous wavefronts (forward from the start and backward 
+                        from the destination) to find the intersection point significantly faster.
+                When a user selects coordinates on the frontend interface, the script maps the coordinates to the nearest 
+                structural road nodes, executes all three routing algorithms in parallel to record performance benchmarks in milliseconds,
+                and returns the chosen path geometry as a JSON payload to render visually on the map.
+=====================================================================================================================================================================
+"""
 
 import os
 import heapq
@@ -214,20 +235,29 @@ def home():
 @app.route('/get_route')
 def get_route():
     try:
+        # 1. Grab parameters
         start_lat = float(request.args.get('start_lat'))
         start_lon = float(request.args.get('start_lon'))
         end_lat = float(request.args.get('end_lat'))
         end_lon = float(request.args.get('end_lon'))
         selected_algo = request.args.get('algo', 'double_a_star')
         
-        #get respective nodes
+        # 2. Get the closest graph nodes
         start_node = ox.distance.nearest_nodes(graph, X=start_lon, Y=start_lat)
         end_node = ox.distance.nearest_nodes(graph, X=end_lon, Y=end_lat)
         
-        # run all 3 algorithms and find the time taken and the paths found
+        # Guard rail: If user clicks the exact same spot
+        if start_node == end_node:
+            return jsonify({
+                "status": "success",
+                "route": [[start_lat, start_lon]],
+                "benchmarks": {"dijkstra": 0, "a_star": 0, "double_a_star": 0}
+            })
+
+        # 3. Time and execute algorithms
         t0 = time.perf_counter()
         dijkstra_path = run_dijkstra(graph, start_node, end_node)
-        t_dijkstra = (time.perf_counter() - t0) * 1000 
+        t_dijkstra = (time.perf_counter() - t0) * 1000
 
         t0 = time.perf_counter()
         a_star_path = run_standard_a_star(graph, start_node, end_node)
@@ -237,17 +267,29 @@ def get_route():
         double_astar_path = run_double_a_star(graph, start_node, end_node)
         t_double = (time.perf_counter() - t0) * 1000
 
-        # choose which path to show based on user choice
+        # 4. Pick path based on user selection
         chosen_node_path = double_astar_path
-        if selected_algo == 'dijkstra': chosen_node_path = dijkstra_path
-        elif selected_algo == 'a_star': chosen_node_path = a_star_path
+        if selected_algo == 'dijkstra': 
+            chosen_node_path = dijkstra_path
+        elif selected_algo == 'a_star': 
+            chosen_node_path = a_star_path
 
-        if not chosen_node_path:#send error message
-            return jsonify({"status": "error", "message": "No valid route path found."}), 400
+        # 5. Check if the chosen algorithm actually found anything
+        if not chosen_node_path:
+            print(f"Algorithm '{selected_algo}' returned an empty path.")
+            return jsonify({"status": "error", "message": f"No valid route found using {selected_algo}."}), 400
             
-        geometry_path = [[graph.nodes[node]['y'], graph.nodes[node]['x']] for node in chosen_node_path]
-        
-        #return final values
+        # 6. Build the coordinates payload
+        geometry_path = []
+        for node in chosen_node_path:
+            if node in graph.nodes:
+                geometry_path.append([graph.nodes[node]['y'], graph.nodes[node]['x']])
+            else:
+                print(f"Warning: Node {node} was in path but missing from graph structural data!")
+
+        if not geometry_path:
+            return jsonify({"status": "error", "message": "Failed to map path nodes to map coordinates."}), 400
+
         return jsonify({
             "status": "success", 
             "route": geometry_path,
@@ -259,7 +301,11 @@ def get_route():
         })
         
     except Exception as e:
+        # Crucial: This will tell your terminal exactly what code line broke!
+        import traceback
+        print("\n--- BACKEND CRASH LOG ---")
+        traceback.print_exc()
+        print("-------------------------\n")
         return jsonify({"status": "error", "message": str(e)}), 400
-
 if __name__ == '__main__':
     app.run(debug=True, port=5000, use_reloader=False)
